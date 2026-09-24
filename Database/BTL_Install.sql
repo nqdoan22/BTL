@@ -3,6 +3,11 @@
 -- Chạy trên MySQL 8.0+ (MySQL Workbench hoặc mysql client).
 -- =========================================================================
 
+-- MySQL Workbench bật mặc định chế độ Safe Updates, chặn các lệnh UPDATE/DELETE không có WHERE theo khóa
+-- và làm script dừng giữa chừng. Tắt tạm trong phiên chạy script, khôi phục ở cuối file.
+SET @OLD_SQL_SAFE_UPDATES = @@SQL_SAFE_UPDATES;
+SET SQL_SAFE_UPDATES = 0;
+
 CREATE DATABASE IF NOT EXISTS BTL_ThuVien CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE DATABASE IF NOT EXISTS BTL_DeAn CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -777,6 +782,10 @@ END$$
 DROP PROCEDURE IF EXISTS sp_fn_ThongTinNhanVien_Multi$$
 CREATE PROCEDURE sp_fn_ThongTinNhanVien_Multi() 
 BEGIN 
+    -- Cho phép UPDATE bảng tạm không có WHERE theo khóa kể cả khi phiên bật Safe Updates (MySQL Workbench)
+    DECLARE v_safe_updates INT DEFAULT @@SQL_SAFE_UPDATES;
+    SET SQL_SAFE_UPDATES = 0;
+
     -- Bước 1: khai báo bảng kết quả (tương đương RETURNS @KetQua TABLE (...))
     DROP TEMPORARY TABLE IF EXISTS tmp_ThongTinNhanVien;
     CREATE TEMPORARY TABLE tmp_ThongTinNhanVien (
@@ -805,6 +814,7 @@ BEGIN
     -- Bước 5: trả về bảng kết quả (tương đương RETURN)
     SELECT MaNV, HoTen, NgaySinh, NguoiThan, TongLuongTB FROM tmp_ThongTinNhanVien ORDER BY MaNV;
     DROP TEMPORARY TABLE IF EXISTS tmp_ThongTinNhanVien;
+    SET SQL_SAFE_UPDATES = v_safe_updates;
 END$$
 
 -- =========================================================================
@@ -909,3 +919,5 @@ BEGIN
 END$$
 
 DELIMITER ;
+
+SET SQL_SAFE_UPDATES = @OLD_SQL_SAFE_UPDATES;
