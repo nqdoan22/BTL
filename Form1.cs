@@ -506,8 +506,8 @@ public class Form1 : Form
             ColumnCount = 1,
             BackColor = ColorCanvas
         };
-        // Top Toolbar: Height 150px
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
+        // Top Toolbar: Height 240px
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 240));
         // Bottom DataGrid: 100%
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
@@ -579,7 +579,7 @@ public class Form1 : Form
         var btnChildBorrow = CreateStyledButton("Bài 5e: Có trẻ em mượn", ColorPurple, Color.White, 160, 29);
         btnChildBorrow.Click += (_, _) => ExecuteLibraryRoutine("sp_DocGiaCoTreEmMuon", Array.Empty<(string, object)>(), "Độc giả có trẻ em cùng mượn (Bài 5e)");
 
-        var btnTriggers = CreateStyledButton("⚡ Bài 6: Kiểm tra Trigger (6.1-6.4)", ColorGreen, Color.White, 205, 29);
+        var btnTriggers = CreateStyledButton("⚡ Bài 6: DS Trigger", ColorGreen, Color.White, 135, 29);
         btnTriggers.Click += (_, _) => ExecuteLibraryRoutine("sp_KiemTraTrigger", Array.Empty<(string, object)>(), "Danh sách Triggers CSDL Thư viện (Bài 6.1 - 6.4)");
 
         pnlReports.Controls.Add(btnBorrowing);
@@ -587,13 +587,21 @@ public class Form1 : Form
         pnlReports.Controls.Add(btnChildBorrow);
         pnlReports.Controls.Add(btnTriggers);
 
+        // Bài 6: chạy thử từng trigger trong transaction rồi ROLLBACK (dữ liệu không bị thay đổi)
+        pnlReports.Controls.Add(CreateTriggerTestButton("6.1", "6.1 Xóa mượn", "tg_delMuon", 115));
+        pnlReports.Controls.Add(CreateTriggerTestButton("6.2", "6.2 Thêm mượn", "tg_insMuon", 120));
+        pnlReports.Controls.Add(CreateTriggerTestButton("6.3", "6.3 Sửa cuốn sách", "tg_updCuonSach", 140));
+        pnlReports.Controls.Add(CreateTriggerTestButton("6.4", "6.4 Thêm/sửa tựa sách", "tg_InfThongBao", 165));
+
         // Quick sample chips
         var chipPanel = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0, 8, 0, 0) };
         chipPanel.Controls.Add(new Label { Text = "Mẫu thử:", Font = new Font("Segoe UI", 8.5F), ForeColor = ColorTextMuted, AutoSize = true, Margin = new Padding(0, 4, 6, 0) });
         chipPanel.Controls.Add(CreateChip("ISBN001", () => txtLibraryIsbn.Text = "ISBN001"));
         chipPanel.Controls.Add(CreateChip("ISBN002", () => txtLibraryIsbn.Text = "ISBN002"));
+        chipPanel.Controls.Add(CreateChip("ISBN003", () => txtLibraryIsbn.Text = "ISBN003"));
         chipPanel.Controls.Add(CreateChip("DG01 (Người lớn)", () => txtLibraryReaderId.Text = "DG01"));
         chipPanel.Controls.Add(CreateChip("DG02 (Trẻ em)", () => txtLibraryReaderId.Text = "DG02"));
+        chipPanel.Controls.Add(CreateChip("DG06 (Trẻ em)", () => txtLibraryReaderId.Text = "DG06"));
         pnlReports.Controls.Add(chipPanel);
 
         filterLayout.Controls.Add(pnlReports, 1, 0);
@@ -646,8 +654,8 @@ public class Form1 : Form
             ColumnCount = 1,
             BackColor = ColorCanvas
         };
-        // Top Toolbar: Height 168px
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 168));
+        // Top Toolbar: Height 200px
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 200));
         // Bottom DataGrid: 100%
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
@@ -731,7 +739,8 @@ public class Form1 : Form
 
         pnlReports.Controls.Add(CreateStyledButton("Bài 7.3 Lương TB các phòng", Color.FromArgb(56, 102, 165), Color.White, 175, 28, () => ExecuteProjectRoutine("sp_fn_LuongTrungBinhCacPhong", Array.Empty<(string, object)>(), "Bài 7.3: Lương TB các phòng ban")));
         pnlReports.Controls.Add(CreateStyledButton("Bài 7.5 Số DA / phòng", Color.FromArgb(56, 102, 165), Color.White, 150, 28, () => ExecuteProjectRoutine("sp_fn_SoDuAnTheoPhong", Array.Empty<(string, object)>(), "Bài 7.5: Số đề án theo từng phòng")));
-        pnlReports.Controls.Add(CreateStyledButton("Bài 7.6 Thông tin NV (Bảng)", Color.FromArgb(56, 102, 165), Color.White, 175, 28, () => ExecuteProjectRoutine("sp_fn_ThongTinNhanVien", Array.Empty<(string, object)>(), "Bài 7.6: Danh sách thông tin nhân viên")));
+        pnlReports.Controls.Add(CreateStyledButton("Bài 7.6 NV (Inline)", Color.FromArgb(56, 102, 165), Color.White, 135, 28, () => ExecuteProjectRoutine("sp_fn_ThongTinNhanVien_Inline", Array.Empty<(string, object)>(), "Bài 7.6 (Cách 1 - Inline): Thông tin nhân viên")));
+        pnlReports.Controls.Add(CreateStyledButton("Bài 7.6 NV (Multi-statement)", Color.FromArgb(56, 102, 165), Color.White, 185, 28, () => ExecuteProjectRoutine("sp_fn_ThongTinNhanVien_Multi", Array.Empty<(string, object)>(), "Bài 7.6 (Cách 2 - Multi-statement): Thông tin nhân viên")));
 
         pnlReports.Controls.Add(CreateStyledButton("Bài 8.1 Dự án > 2 NV", ColorPurple, Color.White, 150, 28, () => ExecuteProjectRoutine("sp_fn_DuAnNhieuNhanVien", Array.Empty<(string, object)>(), "Bài 8.1: Các dự án có trên 2 nhân viên")));
         pnlReports.Controls.Add(CreateStyledButton("Bài 8.2 Phòng > 2 NV lương > 25k", ColorPurple, Color.White, 205, 28, () => ExecuteProjectRoutine("sp_fn_PhongNhieuNhanVienLuongCao", Array.Empty<(string, object)>(), "Bài 8.2: Phòng có trên 2 NV và có lương > 25000")));
@@ -1304,6 +1313,12 @@ public class Form1 : Form
         btn.FlatAppearance.BorderSize = 0;
         if (onClick != null) btn.Click += (_, _) => onClick();
         return btn;
+    }
+
+    private Button CreateTriggerTestButton(string bai, string text, string triggerName, int width)
+    {
+        return CreateStyledButton(text, ColorGreen, Color.White, width, 29, () =>
+            ExecuteLibraryRoutine("sp_KiemThuTrigger", new[] { ("p_bai", (object)bai) }, $"Bài {bai}: Kiểm thử trigger {triggerName} (ROLLBACK sau khi chạy)"));
     }
 
     private static Button CreateChip(string text, Action onClick)
