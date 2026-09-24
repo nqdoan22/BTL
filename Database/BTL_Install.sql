@@ -107,43 +107,45 @@ CREATE TABLE ThongBao (
 -- -------------------------------------------------------------------------
 -- DỮ LIỆU MẪU CSDL THƯ VIỆN (Đủ để test mọi trường hợp)
 -- -------------------------------------------------------------------------
+-- Các độc giả:
+-- DG01, DG03, DG05: người lớn | DG02 (DG01 bảo lãnh), DG04 (DG03 bảo lãnh), DG06 (DG05 bảo lãnh): trẻ em
 INSERT INTO DocGia VALUES 
 ('DG01','Nguyen','Van','An','1995-01-10'),
 ('DG02','Tran','Thi','Binh','2012-04-12'),
 ('DG03','Le','Minh','Chau','1998-08-20'),
-('DG04','Pham','Hoang','Nam','2014-06-15');
+('DG04','Pham','Hoang','Nam','2014-06-15'),
+('DG05','Hoang','Thi','Em','1990-03-05'),
+('DG06','Vu','Duc','Phong','2016-09-09');
 
 INSERT INTO Nguoilon VALUES 
 ('DG01','12','Le Loi','Quan 1','0900000001','2028-12-31'),
-('DG03','20','Nguyen Hue','Quan 1','0900000003','2028-12-31');
+('DG03','20','Nguyen Hue','Quan 1','0900000003','2028-12-31'),
+('DG05','8','Tran Hung Dao','Quan 5','0900000005','2027-06-30');
 
 INSERT INTO Treem VALUES 
 ('DG02','DG01'),
-('DG04','DG03');
+('DG04','DG03'),
+('DG06','DG05');
 
 INSERT INTO Tuasach (tuasach,tacgia,tomtat) VALUES 
 ('SQL Server can ban','Pham Van A','Giao trinh thuc hanh SQL Server'),
 ('Lap trinh C#','Tran Van B','WinForms va ADO.NET'),
 ('Cau truc du lieu','Nguyen Van C','Giai thuat va lap trinh');
 
+-- Ban đầu mọi cuốn sách và đầu sách đều sẵn sàng ('yes').
+-- Tình trạng thực tế sẽ do trigger Bài 6 cập nhật khi nhập dữ liệu mượn (cuối Phần 1).
 INSERT INTO Dausach VALUES 
 ('ISBN001',1,'Tieng Viet','Cung','yes'),
 ('ISBN002',2,'Tieng Viet','Mem','yes'),
-('ISBN003',3,'Tieng Anh','Cung','no');
+('ISBN003',3,'Tieng Anh','Cung','yes');
 
 INSERT INTO Cuonsach VALUES 
 ('ISBN001',1,'yes'),
-('ISBN001',2,'no'),
+('ISBN001',2,'yes'),
+('ISBN001',3,'yes'),
 ('ISBN002',1,'yes'),
 ('ISBN002',2,'yes'),
-('ISBN003',1,'no');
-
--- Dữ liệu mượn sách:
--- DG01 mượn quá hạn > 14 ngày (hạn trả cách đây 30 ngày) -> Test Bài 5d
--- DG01 mượn sách và DG02 (trẻ em do DG01 bảo lãnh) cũng đang mượn -> Test Bài 5e
-INSERT INTO Muon VALUES 
-('ISBN001',2,'DG01', DATE_SUB(CURDATE(), INTERVAL 45 DAY), DATE_SUB(CURDATE(), INTERVAL 30 DAY)),
-('ISBN002',1,'DG02', DATE_SUB(CURDATE(), INTERVAL 10 DAY), DATE_ADD(CURDATE(), INTERVAL 10 DAY));
+('ISBN003',1,'yes');
 
 DELIMITER $$
 
@@ -342,21 +344,26 @@ BEGIN
     WHERE isbn = NEW.isbn; 
 END$$
 
--- 6.4. Thêm mới tựa sách -> Ghi thông báo
+-- 6.4. tg_InfThongBao: thêm mới, sửa tên tác giả, thêm/sửa tựa sách -> in câu thông báo 'Đã thêm mới tựa sách'.
+-- MySQL không cho 1 trigger bắt nhiều sự kiện (INSERT OR UPDATE) như SQL Server, nên tách thành 2 trigger
+-- dùng chung nội dung. MySQL không có lệnh PRINT trong trigger, nên câu thông báo được ghi vào bảng ThongBao.
+DROP TRIGGER IF EXISTS tg_updTuasachThongBao$$
 DROP TRIGGER IF EXISTS tg_InfThongBao$$
 CREATE TRIGGER tg_InfThongBao AFTER INSERT ON Tuasach FOR EACH ROW 
 BEGIN 
     INSERT INTO ThongBao(noi_dung) VALUES ('Đã thêm mới tựa sách'); 
 END$$
 
--- 6.4b. Sửa tựa sách / tên tác giả -> Ghi thông báo
-DROP TRIGGER IF EXISTS tg_updTuasachThongBao$$
-CREATE TRIGGER tg_updTuasachThongBao AFTER UPDATE ON Tuasach FOR EACH ROW 
+DROP TRIGGER IF EXISTS tg_InfThongBao_Update$$
+CREATE TRIGGER tg_InfThongBao_Update AFTER UPDATE ON Tuasach FOR EACH ROW 
 BEGIN 
-    INSERT INTO ThongBao(noi_dung) VALUES ('Đã cập nhật thông tin tựa sách'); 
+    -- Chỉ thông báo khi tên tựa sách hoặc tên tác giả thực sự thay đổi
+    IF NOT (OLD.tuasach <=> NEW.tuasach) OR NOT (OLD.tacgia <=> NEW.tacgia) THEN
+        INSERT INTO ThongBao(noi_dung) VALUES ('Đã thêm mới tựa sách'); 
+    END IF;
 END$$
 
--- Thủ tục kiểm tra các trigger đã tạo
+-- Thủ tục liệt kê các trigger đã tạo
 DROP PROCEDURE IF EXISTS sp_KiemTraTrigger$$
 CREATE PROCEDURE sp_KiemTraTrigger()
 BEGIN 
@@ -365,7 +372,134 @@ BEGIN
     WHERE TRIGGER_SCHEMA = DATABASE(); 
 END$$
 
+-- Thủ tục chạy thử từng trigger 6.1 - 6.4 theo gợi ý của đề (BEGIN TRAN ... ROLLBACK):
+-- ghi lại trạng thái TRƯỚC và SAU khi thao tác, sau đó ROLLBACK để dữ liệu không bị thay đổi.
+-- Bảng kết quả dùng ENGINE=MEMORY (không tham gia transaction) nên vẫn còn sau khi ROLLBACK.
+DROP PROCEDURE IF EXISTS sp_KiemThuTrigger$$
+CREATE PROCEDURE sp_KiemThuTrigger(IN p_bai VARCHAR(5))
+BEGIN
+    DECLARE v_ma_tuasach INT;
+    DECLARE v_isbn VARCHAR(20);
+    DECLARE v_ma_cuonsach INT;
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        DROP TEMPORARY TABLE IF EXISTS tmp_KiemThu;
+        RESIGNAL;
+    END;
+
+    DROP TEMPORARY TABLE IF EXISTS tmp_KiemThu;
+    CREATE TEMPORARY TABLE tmp_KiemThu (
+        buoc INT AUTO_INCREMENT PRIMARY KEY,
+        thoi_diem VARCHAR(60),
+        doi_tuong VARCHAR(120),
+        gia_tri VARCHAR(255)
+    ) ENGINE = MEMORY;
+
+    START TRANSACTION;
+
+    IF p_bai = '6.1' THEN
+        -- Xóa 1 phiếu mượn -> cuốn sách phải chuyển sang 'yes'
+        SELECT isbn, ma_cuonsach INTO v_isbn, v_ma_cuonsach FROM Muon ORDER BY isbn, ma_cuonsach LIMIT 1;
+        IF v_isbn IS NULL THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Không có phiếu mượn nào để kiểm thử tg_delMuon';
+        END IF;
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            SELECT 'Trước', CONCAT('Cuonsach ', isbn, ' #', ma_cuonsach, ' .tinhtrang'), tinhtrang
+            FROM Cuonsach WHERE isbn = v_isbn AND ma_cuonsach = v_ma_cuonsach;
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            VALUES ('Thao tác', 'DELETE FROM Muon', CONCAT('isbn = ', v_isbn, ', ma_cuonsach = ', v_ma_cuonsach));
+        DELETE FROM Muon WHERE isbn = v_isbn AND ma_cuonsach = v_ma_cuonsach;
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            SELECT 'Sau (tg_delMuon)', CONCAT('Cuonsach ', isbn, ' #', ma_cuonsach, ' .tinhtrang'), tinhtrang
+            FROM Cuonsach WHERE isbn = v_isbn AND ma_cuonsach = v_ma_cuonsach;
+
+    ELSEIF p_bai = '6.2' THEN
+        -- Thêm 1 phiếu mượn cho cuốn sách đang rảnh -> cuốn sách phải chuyển sang 'no'
+        SELECT isbn, ma_cuonsach INTO v_isbn, v_ma_cuonsach FROM Cuonsach WHERE tinhtrang = 'yes' ORDER BY isbn, ma_cuonsach LIMIT 1;
+        IF v_isbn IS NULL THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Không còn cuốn sách rảnh để kiểm thử tg_insMuon';
+        END IF;
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            SELECT 'Trước', CONCAT('Cuonsach ', isbn, ' #', ma_cuonsach, ' .tinhtrang'), tinhtrang
+            FROM Cuonsach WHERE isbn = v_isbn AND ma_cuonsach = v_ma_cuonsach;
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            VALUES ('Thao tác', 'INSERT INTO Muon', CONCAT('isbn = ', v_isbn, ', ma_cuonsach = ', v_ma_cuonsach, ', ma_DocGia = DG05'));
+        INSERT INTO Muon VALUES (v_isbn, v_ma_cuonsach, 'DG05', CURDATE(), DATE_ADD(CURDATE(), INTERVAL 14 DAY));
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            SELECT 'Sau (tg_insMuon)', CONCAT('Cuonsach ', isbn, ' #', ma_cuonsach, ' .tinhtrang'), tinhtrang
+            FROM Cuonsach WHERE isbn = v_isbn AND ma_cuonsach = v_ma_cuonsach;
+
+    ELSEIF p_bai = '6.3' THEN
+        -- ISBN003 chỉ có 1 cuốn và đang được mượn -> đầu sách 'no'.
+        -- Cập nhật cuốn sách thành 'yes' -> đầu sách 'yes'; cập nhật lại 'no' -> đầu sách 'no'.
+        SET v_isbn = 'ISBN003';
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            SELECT 'Trước', CONCAT('Dausach ', isbn, ' .trangthai'), trangthai FROM Dausach WHERE isbn = v_isbn;
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            VALUES ('Thao tác', 'UPDATE Cuonsach', 'SET tinhtrang = ''yes'' WHERE isbn = ''ISBN003''');
+        UPDATE Cuonsach SET tinhtrang = 'yes' WHERE isbn = v_isbn;
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            SELECT 'Sau (tg_updCuonSach)', CONCAT('Dausach ', isbn, ' .trangthai'), trangthai FROM Dausach WHERE isbn = v_isbn;
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            VALUES ('Thao tác', 'UPDATE Cuonsach', 'SET tinhtrang = ''no'' WHERE isbn = ''ISBN003''');
+        UPDATE Cuonsach SET tinhtrang = 'no' WHERE isbn = v_isbn;
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            SELECT 'Sau (tg_updCuonSach)', CONCAT('Dausach ', isbn, ' .trangthai'), trangthai FROM Dausach WHERE isbn = v_isbn;
+
+    ELSEIF p_bai = '6.4' THEN
+        -- Thêm mới tựa sách, sửa tên tác giả, sửa tên tựa sách -> mỗi thao tác sinh 1 thông báo
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            SELECT 'Trước', 'Số dòng trong ThongBao', COUNT(*) FROM ThongBao;
+
+        INSERT INTO Tuasach(tuasach, tacgia, tomtat) VALUES ('Co so du lieu nang cao', 'Le Van D', 'Sach kiem thu trigger');
+        SET v_ma_tuasach = LAST_INSERT_ID();
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            SELECT 'Sau INSERT Tuasach (tg_InfThongBao)', 'ThongBao mới nhất', noi_dung FROM ThongBao ORDER BY id DESC LIMIT 1;
+
+        UPDATE Tuasach SET tacgia = 'Le Van E' WHERE ma_tuasach = v_ma_tuasach;
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            SELECT 'Sau UPDATE tacgia (tg_InfThongBao_Update)', 'ThongBao mới nhất', noi_dung FROM ThongBao ORDER BY id DESC LIMIT 1;
+
+        UPDATE Tuasach SET tuasach = 'Co so du lieu nang cao (tai ban)' WHERE ma_tuasach = v_ma_tuasach;
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            SELECT 'Sau UPDATE tuasach (tg_InfThongBao_Update)', 'ThongBao mới nhất', noi_dung FROM ThongBao ORDER BY id DESC LIMIT 1;
+
+        INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+            SELECT 'Sau', 'Số dòng trong ThongBao', COUNT(*) FROM ThongBao;
+    ELSE
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Tham số p_bai phải là 6.1, 6.2, 6.3 hoặc 6.4';
+    END IF;
+
+    ROLLBACK;
+
+    INSERT INTO tmp_KiemThu(thoi_diem, doi_tuong, gia_tri)
+        VALUES ('ROLLBACK', 'Dữ liệu', 'Đã hoàn tác, CSDL không bị thay đổi');
+
+    SELECT buoc AS Buoc, thoi_diem AS ThoiDiem, doi_tuong AS DoiTuong, gia_tri AS GiaTri FROM tmp_KiemThu ORDER BY buoc;
+    DROP TEMPORARY TABLE IF EXISTS tmp_KiemThu;
+END$$
+
 DELIMITER ;
+
+-- -------------------------------------------------------------------------
+-- DỮ LIỆU MƯỢN SÁCH (nhập SAU khi tạo trigger để tình trạng sách được cập nhật đúng)
+-- -------------------------------------------------------------------------
+-- DG01 (người lớn) mượn quá hạn 30 ngày            -> có trong 5c, 5d
+-- DG03 (người lớn) mượn quá hạn 5 ngày (<= 14)     -> có trong 5c, KHÔNG có trong 5d
+-- DG02 (trẻ em của DG01) đang mượn                 -> DG01 có trong 5e
+-- DG04 (trẻ em của DG03) không mượn                -> DG03 KHÔNG có trong 5e
+-- DG06 (trẻ em của DG05) đang mượn, DG05 không mượn -> DG05 KHÔNG có trong 5c, 5e
+-- Sau khi nhập: ISBN001 còn 2/3 cuốn (đầu sách 'yes'); ISBN002 và ISBN003 hết sách (đầu sách 'no').
+INSERT INTO Muon VALUES 
+('ISBN001',2,'DG01', DATE_SUB(CURDATE(), INTERVAL 45 DAY), DATE_SUB(CURDATE(), INTERVAL 30 DAY)),
+('ISBN002',1,'DG02', DATE_SUB(CURDATE(), INTERVAL 10 DAY), DATE_ADD(CURDATE(), INTERVAL 10 DAY)),
+('ISBN003',1,'DG03', DATE_SUB(CURDATE(), INTERVAL 19 DAY), DATE_SUB(CURDATE(), INTERVAL 5 DAY)),
+('ISBN002',2,'DG06', DATE_SUB(CURDATE(), INTERVAL 3 DAY), DATE_ADD(CURDATE(), INTERVAL 11 DAY));
+
+-- Xóa các thông báo sinh ra trong quá trình cài đặt (nếu có)
+DELETE FROM ThongBao;
 
 
 -- =========================================================================
@@ -438,42 +572,70 @@ CREATE TABLE THANNHAN (
 -- -------------------------------------------------------------------------
 -- DỮ LIỆU MẪU CSDL ĐỀ ÁN (Đủ để test mọi trường hợp)
 -- -------------------------------------------------------------------------
+-- Phòng 1: 3 NV, lương TB 32333 (> 30000), 2 NV lương > 25000, 2 NV nam
+-- Phòng 4: 3 NV, lương TB 23500 (<= 30000), 0 NV lương > 25000   -> 8.2 vẫn liệt kê (số lượng = 0); 8.3, 8.4 loại
+-- Phòng 5: 3 NV, lương TB 30667 (> 30000), 3 NV lương > 25000, 1 NV nam
+-- Phòng 6: 1 NV (<= 2 NV)                                         -> 8.2 loại; lương TB 32000 -> 8.3, 8.4 có
+-- Phòng 7: chưa có nhân viên, chưa có đề án                       -> 7.1 trả NULL, 7.5 trả 0
 INSERT INTO PHONGBAN VALUES 
 ('1', 'Ke toan', NULL, '2020-01-01'),
+('4', 'Kinh doanh', NULL, '2021-04-01'),
 ('5', 'Cong nghe', NULL, '2020-02-01'),
-('6', 'Nhan su', NULL, '2020-03-01');
+('6', 'Nhan su', NULL, '2020-03-01'),
+('7', 'Nghien cuu', NULL, '2023-07-01');
 
 INSERT INTO NHANVIEN VALUES 
 ('NV001','Nguyen','Van','An','1985-01-10','Ha Noi','Nam',42000,NULL,'1'),
 ('NV002','Tran','Thi','Binh','1988-04-12','Ha Noi','Nu',38000,'NV001','5'),
 ('NV003','Le','Minh','Chau','1990-08-20','Da Nang','Nu',28000,'NV002','5'),
 ('NV004','Pham','Quoc','Dung','1982-02-15','Can Tho','Nam',32000,'NV001','6'),
-('NV005','Vo','Thanh','Hai','1992-11-03','Hue','Nam',26000,'NV002','5');
+('NV005','Vo','Thanh','Hai','1992-11-03','Hue','Nam',26000,'NV002','5'),
+('NV006','Dang','Thu','Ha','1991-05-21','Ha Noi','Nu',35000,'NV001','1'),
+('NV007','Bui','Van','Khoa','1995-12-02','Hai Phong','Nam',20000,'NV001','1'),
+('NV008','Do','Thanh','Long','1987-07-17','Ha Noi','Nam',22000,'NV001','4'),
+('NV009','Ngo','Thi','Mai','1993-03-30','Nam Dinh','Nu',24000,'NV008','4'),
+('NV010','Ly','Van','Nghia','1996-10-11','Vinh','Nam',24500,'NV008','4');
 
 UPDATE PHONGBAN SET TRPHG='NV001' WHERE MAPHG='1';
+UPDATE PHONGBAN SET TRPHG='NV008' WHERE MAPHG='4';
 UPDATE PHONGBAN SET TRPHG='NV002' WHERE MAPHG='5';
 UPDATE PHONGBAN SET TRPHG='NV004' WHERE MAPHG='6';
 
+INSERT INTO DIADIEM_PHG VALUES 
+('1','Ha Noi'),
+('4','Ha Noi'),
+('4','Hai Phong'),
+('5','Da Nang'),
+('6','Can Tho');
+
+-- DA 1: 4 NV (> 2) | DA 2: 2 NV (<= 2) | DA 3: 1 NV | DA 4: 3 NV (> 2) | DA 5: chưa có NV
 INSERT INTO DEAN VALUES 
 ('1','He thong thu vien','Ha Noi','5'),
 ('2','Chuyen doi so','Da Nang','5'),
-('3','Tuyen dung','Can Tho','6');
+('3','Tuyen dung','Can Tho','6'),
+('4','Mo rong thi truong','Hai Phong','4'),
+('5','Kiem toan noi bo','Ha Noi','1');
 
--- Phân công giờ tham gia dự án để test Bài 7.4 (tiền thưởng theo mức giờ):
--- NV001: 40 giờ (mức 30-60 -> thưởng 500$)
--- NV002: 70 + 40 = 110 giờ (mức 100-150 -> thưởng 1200$)
--- NV003: 30 giờ (mức 30-60 -> thưởng 500$)
--- NV004: 160 giờ (mức >=150 -> thưởng 1600$)
--- NV005: 100 giờ (mức 100-150 -> thưởng 1200$)
+-- Tổng giờ tham gia dự án để test Bài 7.4 (tiền thưởng), đủ mọi mức và các giá trị biên:
+-- NV001: 40         -> 500    | NV002: 70 + 40 = 110 -> 1200 | NV003: 30 (biên)  -> 500
+-- NV004: 160        -> 1600   | NV005: 100 (biên)    -> 1200 | NV006: 60 (biên)  -> 500
+-- NV007: 80         -> 1000   | NV008: 20            -> 0    | NV009: 0          -> 0
+-- NV010: 15         -> 0
 INSERT INTO PHANCONG VALUES 
 ('NV001','1',40),
 ('NV002','1',70),
 ('NV003','1',30),
-('NV004','3',160),
+('NV010','1',15),
+('NV002','2',40),
 ('NV005','2',100),
-('NV002','2',40);
+('NV004','3',160),
+('NV006','4',60),
+('NV007','4',80),
+('NV008','4',20);
 
 INSERT INTO THANNHAN VALUES 
+('NV001','Hoa','1987-02-14','Nu','Vo'),
+('NV001','Tuan','2012-06-01','Nam','Con'),
 ('NV002','Lan','2015-01-01','Nu','Con'),
 ('NV004','Minh','2010-05-01','Nam','Con');
 
@@ -481,6 +643,8 @@ DELIMITER $$
 
 -- =========================================================================
 -- BÀI 7: Các Function CSDL Đề án
+-- Lưu ý: MySQL chỉ hỗ trợ hàm trả về 1 giá trị (scalar), không có hàm trả về bảng như SQL Server.
+-- Vì vậy các yêu cầu trả về nhiều dòng được viết thành hàm scalar + thủ tục gọi hàm đó để trả bảng.
 -- =========================================================================
 
 -- 7.1. Lương trung bình của một phòng ban tùy ý
@@ -521,13 +685,29 @@ BEGIN
 END$$
 
 -- 7.3. Tổng tiền lương trung bình của các phòng ban
+-- Hàm trả về trung bình của lương trung bình các phòng (chỉ tính phòng có nhân viên).
+DROP FUNCTION IF EXISTS fn_LuongTrungBinhCacPhong$$
+CREATE FUNCTION fn_LuongTrungBinhCacPhong() 
+RETURNS DECIMAL(18,2) 
+DETERMINISTIC READS SQL DATA 
+BEGIN 
+    DECLARE v_result DECIMAL(18,2); 
+    SELECT AVG(LuongTB) INTO v_result 
+    FROM (SELECT AVG(LUONG) AS LuongTB FROM NHANVIEN WHERE PHG IS NOT NULL GROUP BY PHG) t; 
+    RETURN v_result; 
+END$$
+
+-- Thủ tục hiển thị: lương TB từng phòng (gọi hàm 7.1) + dòng tổng hợp (gọi hàm 7.3)
 DROP PROCEDURE IF EXISTS sp_fn_LuongTrungBinhCacPhong$$
 CREATE PROCEDURE sp_fn_LuongTrungBinhCacPhong() 
 BEGIN 
-    SELECT p.MAPHG, p.TENPHG, ROUND(AVG(n.LUONG), 2) AS LuongTrungBinh 
-    FROM PHONGBAN p 
-    LEFT JOIN NHANVIEN n ON n.PHG = p.MAPHG 
-    GROUP BY p.MAPHG, p.TENPHG; 
+    SELECT MaPhong, TenPhong, LuongTrungBinh FROM (
+        SELECT 0 AS thu_tu, MAPHG AS MaPhong, TENPHG AS TenPhong, fn_LuongTrungBinhPhong(MAPHG) AS LuongTrungBinh 
+        FROM PHONGBAN 
+        UNION ALL 
+        SELECT 1, '*', 'Trung bình các phòng', fn_LuongTrungBinhCacPhong()
+    ) kq 
+    ORDER BY thu_tu, MaPhong; 
 END$$
 
 -- 7.4. Tổng tiền thưởng cho nhân viên dựa vào tổng số giờ tham gia dự án
@@ -556,86 +736,176 @@ BEGIN
 END$$
 
 -- 7.5. Tổng số dự án theo mỗi phòng ban
+DROP FUNCTION IF EXISTS fn_SoDuAnCuaPhong$$
+CREATE FUNCTION fn_SoDuAnCuaPhong(p_maPhong VARCHAR(2)) 
+RETURNS INT 
+DETERMINISTIC READS SQL DATA 
+BEGIN 
+    RETURN (SELECT COUNT(*) FROM DEAN WHERE PHONG = p_maPhong); 
+END$$
+
 DROP PROCEDURE IF EXISTS sp_fn_SoDuAnTheoPhong$$
 CREATE PROCEDURE sp_fn_SoDuAnTheoPhong() 
 BEGIN 
-    SELECT p.MAPHG, p.TENPHG, COUNT(DISTINCT d.MADA) AS SoDuAn 
-    FROM PHONGBAN p 
-    LEFT JOIN DEAN d ON d.PHONG = p.MAPHG 
-    GROUP BY p.MAPHG, p.TENPHG; 
+    SELECT MAPHG AS MaPhong, TENPHG AS TenPhong, fn_SoDuAnCuaPhong(MAPHG) AS SoDuAn 
+    FROM PHONGBAN 
+    ORDER BY MAPHG; 
 END$$
 
--- 7.6. Thông tin nhân viên gồm: MaNV, HoTen, NgaySinh, NguoiThan, TongLuongTB
--- (Trong SQL Server viết bằng Inline Table-Valued Function & Multi-statement Function. Trong MySQL dùng SP trả bảng)
+-- 7.6. Hàm trả về bảng: MaNV, HoTen, NgaySinh, NguoiThan, TongLuongTB
+--   NguoiThan   : danh sách người thân của nhân viên (tên + quan hệ), 'Không có' nếu không có người thân
+--   TongLuongTB : lương trung bình của phòng ban mà nhân viên đang làm việc (dùng hàm 7.1)
+-- SQL Server yêu cầu viết 2 cách: Inline Table-Valued Function và Multi-statement Table-Valued Function.
+-- MySQL không có hàm trả về bảng, nên mô phỏng 2 cách bằng 2 thủ tục:
+
+-- Cách 1 (mô phỏng Inline TVF): toàn bộ kết quả là MỘT câu lệnh SELECT duy nhất.
 DROP PROCEDURE IF EXISTS sp_fn_ThongTinNhanVien$$
-CREATE PROCEDURE sp_fn_ThongTinNhanVien() 
+DROP PROCEDURE IF EXISTS sp_fn_ThongTinNhanVien_Inline$$
+CREATE PROCEDURE sp_fn_ThongTinNhanVien_Inline() 
 BEGIN 
-    SELECT n.MANV, CONCAT_WS(' ', n.HONV, n.TENLOT, n.TENNV) AS HoTen, n.NGSINH, 
-           COUNT(t.TENTN) AS SoNguoiThan, n.LUONG AS TongLuongTB 
+    SELECT n.MANV AS MaNV, 
+           CONCAT_WS(' ', n.HONV, n.TENLOT, n.TENNV) AS HoTen, 
+           n.NGSINH AS NgaySinh, 
+           COALESCE((SELECT GROUP_CONCAT(CONCAT(t.TENTN, ' (', t.QUANHE, ')') ORDER BY t.TENTN SEPARATOR ', ') 
+                     FROM THANNHAN t WHERE t.MA_NVIEN = n.MANV), 'Không có') AS NguoiThan, 
+           fn_LuongTrungBinhPhong(n.PHG) AS TongLuongTB 
     FROM NHANVIEN n 
-    LEFT JOIN THANNHAN t ON t.MA_NVIEN = n.MANV 
-    GROUP BY n.MANV, n.HONV, n.TENLOT, n.TENNV, n.NGSINH, n.LUONG; 
+    ORDER BY n.MANV; 
+END$$
+
+-- Cách 2 (mô phỏng Multi-statement TVF): khai báo bảng kết quả, điền dữ liệu qua nhiều câu lệnh rồi trả về.
+DROP PROCEDURE IF EXISTS sp_fn_ThongTinNhanVien_Multi$$
+CREATE PROCEDURE sp_fn_ThongTinNhanVien_Multi() 
+BEGIN 
+    -- Bước 1: khai báo bảng kết quả (tương đương RETURNS @KetQua TABLE (...))
+    DROP TEMPORARY TABLE IF EXISTS tmp_ThongTinNhanVien;
+    CREATE TEMPORARY TABLE tmp_ThongTinNhanVien (
+        MaNV VARCHAR(9) PRIMARY KEY,
+        HoTen VARCHAR(80),
+        NgaySinh DATE,
+        NguoiThan VARCHAR(255),
+        PHG VARCHAR(2),
+        TongLuongTB DECIMAL(18,2)
+    );
+
+    -- Bước 2: thêm thông tin cơ bản của nhân viên
+    INSERT INTO tmp_ThongTinNhanVien(MaNV, HoTen, NgaySinh, PHG)
+    SELECT MANV, CONCAT_WS(' ', HONV, TENLOT, TENNV), NGSINH, PHG FROM NHANVIEN;
+
+    -- Bước 3: cập nhật danh sách người thân
+    UPDATE tmp_ThongTinNhanVien k
+    JOIN (SELECT MA_NVIEN, GROUP_CONCAT(CONCAT(TENTN, ' (', QUANHE, ')') ORDER BY TENTN SEPARATOR ', ') AS DanhSach 
+          FROM THANNHAN GROUP BY MA_NVIEN) t ON t.MA_NVIEN = k.MaNV
+    SET k.NguoiThan = t.DanhSach;
+    UPDATE tmp_ThongTinNhanVien SET NguoiThan = 'Không có' WHERE NguoiThan IS NULL;
+
+    -- Bước 4: cập nhật lương trung bình của phòng ban
+    UPDATE tmp_ThongTinNhanVien SET TongLuongTB = fn_LuongTrungBinhPhong(PHG);
+
+    -- Bước 5: trả về bảng kết quả (tương đương RETURN)
+    SELECT MaNV, HoTen, NgaySinh, NguoiThan, TongLuongTB FROM tmp_ThongTinNhanVien ORDER BY MaNV;
+    DROP TEMPORARY TABLE IF EXISTS tmp_ThongTinNhanVien;
 END$$
 
 -- =========================================================================
--- BÀI 8: Các hàm/thủ tục thống kê CSDL Đề án
+-- BÀI 8: Các hàm thống kê CSDL Đề án (hàm scalar + thủ tục trả bảng)
 -- =========================================================================
 
--- 8.1. Dự án có nhiều hơn 2 nhân viên tham gia
+-- Các hàm dùng chung
+DROP FUNCTION IF EXISTS fn_SoNhanVienDuAn$$
+CREATE FUNCTION fn_SoNhanVienDuAn(p_maDa VARCHAR(2)) 
+RETURNS INT 
+DETERMINISTIC READS SQL DATA 
+BEGIN 
+    RETURN (SELECT COUNT(*) FROM PHANCONG WHERE SODA = p_maDa); 
+END$$
+
+DROP FUNCTION IF EXISTS fn_SoNhanVienPhong$$
+CREATE FUNCTION fn_SoNhanVienPhong(p_maPhong VARCHAR(2)) 
+RETURNS INT 
+DETERMINISTIC READS SQL DATA 
+BEGIN 
+    RETURN (SELECT COUNT(*) FROM NHANVIEN WHERE PHG = p_maPhong); 
+END$$
+
+DROP FUNCTION IF EXISTS fn_SoNhanVienLuongTren$$
+CREATE FUNCTION fn_SoNhanVienLuongTren(p_maPhong VARCHAR(2), p_mucLuong DECIMAL(18,0)) 
+RETURNS INT 
+DETERMINISTIC READS SQL DATA 
+BEGIN 
+    RETURN (SELECT COUNT(*) FROM NHANVIEN WHERE PHG = p_maPhong AND LUONG > p_mucLuong); 
+END$$
+
+DROP FUNCTION IF EXISTS fn_SoNhanVienNam$$
+CREATE FUNCTION fn_SoNhanVienNam(p_maPhong VARCHAR(2)) 
+RETURNS INT 
+DETERMINISTIC READS SQL DATA 
+BEGIN 
+    RETURN (SELECT COUNT(*) FROM NHANVIEN WHERE PHG = p_maPhong AND PHAI = 'Nam'); 
+END$$
+
+DROP FUNCTION IF EXISTS fn_SoNhanVienPhongThamGiaDuAn$$
+CREATE FUNCTION fn_SoNhanVienPhongThamGiaDuAn(p_maDa VARCHAR(2), p_maPhong VARCHAR(2)) 
+RETURNS INT 
+DETERMINISTIC READS SQL DATA 
+BEGIN 
+    RETURN (SELECT COUNT(*) FROM PHANCONG pc JOIN NHANVIEN n ON n.MANV = pc.MA_NVIEN 
+            WHERE pc.SODA = p_maDa AND n.PHG = p_maPhong); 
+END$$
+
+-- 8.1. Dự án có nhiều hơn 2 nhân viên tham gia: mã DA, tên DA, số lượng NV
 DROP PROCEDURE IF EXISTS sp_fn_DuAnNhieuNhanVien$$
 CREATE PROCEDURE sp_fn_DuAnNhieuNhanVien() 
 BEGIN 
-    SELECT d.MADA, d.TENDA, COUNT(p.MA_NVIEN) AS SoNhanVien 
-    FROM DEAN d 
-    JOIN PHANCONG p ON p.SODA = d.MADA 
-    GROUP BY d.MADA, d.TENDA 
-    HAVING COUNT(p.MA_NVIEN) > 2; 
+    SELECT MADA AS MaDuAn, TENDA AS TenDuAn, fn_SoNhanVienDuAn(MADA) AS SoNhanVien 
+    FROM DEAN 
+    WHERE fn_SoNhanVienDuAn(MADA) > 2 
+    ORDER BY MADA; 
 END$$
 
--- 8.2. Phòng có > 2 nhân viên, số lượng nhân viên có lương > 25000
+-- 8.2. Phòng có nhiều hơn 2 nhân viên: mã phòng, số lượng NV có lương > 25000
 DROP PROCEDURE IF EXISTS sp_fn_PhongNhieuNhanVienLuongCao$$
 CREATE PROCEDURE sp_fn_PhongNhieuNhanVienLuongCao() 
 BEGIN 
-    SELECT p.MAPHG AS MaPhong, p.TENPHG AS TenPhong,
-           COUNT(n.MANV) AS TongSoNV,
-           SUM(n.LUONG > 25000) AS SoNhanVienLuongCao
-    FROM PHONGBAN p
-    JOIN NHANVIEN n ON n.PHG = p.MAPHG
-    GROUP BY p.MAPHG, p.TENPHG
-    HAVING COUNT(n.MANV) > 2 AND SUM(n.LUONG > 25000) > 0; 
+    SELECT MAPHG AS MaPhong, TENPHG AS TenPhong, 
+           fn_SoNhanVienPhong(MAPHG) AS TongSoNV, 
+           fn_SoNhanVienLuongTren(MAPHG, 25000) AS SoNhanVienLuongTren25000 
+    FROM PHONGBAN 
+    WHERE fn_SoNhanVienPhong(MAPHG) > 2 
+    ORDER BY MAPHG; 
 END$$
 
--- 8.3. Phòng có lương trung bình > 30000 (MaPB, TenPB, SoLuongNV)
+-- 8.3. Phòng có lương trung bình > 30000: mã phòng, tên phòng, số lượng NV
 DROP PROCEDURE IF EXISTS sp_fn_PhongLuongCao$$
 CREATE PROCEDURE sp_fn_PhongLuongCao() 
 BEGIN 
-    SELECT p.MAPHG, p.TENPHG, COUNT(n.MANV) AS SoNhanVien, ROUND(AVG(n.LUONG), 2) AS LuongTrungBinh 
-    FROM PHONGBAN p 
-    JOIN NHANVIEN n ON n.PHG = p.MAPHG 
-    GROUP BY p.MAPHG, p.TENPHG 
-    HAVING AVG(n.LUONG) > 30000; 
+    SELECT MAPHG AS MaPhong, TENPHG AS TenPhong, 
+           fn_SoNhanVienPhong(MAPHG) AS SoNhanVien, 
+           fn_LuongTrungBinhPhong(MAPHG) AS LuongTrungBinh 
+    FROM PHONGBAN 
+    WHERE fn_LuongTrungBinhPhong(MAPHG) > 30000 
+    ORDER BY MAPHG; 
 END$$
 
--- 8.4. Phòng có lương trung bình > 30000, số lượng nhân viên nam của phòng đó
+-- 8.4. Phòng có lương trung bình > 30000: mã phòng, tên phòng, số lượng NV nam
 DROP PROCEDURE IF EXISTS sp_fn_PhongNhieuNhanVienNam$$
 CREATE PROCEDURE sp_fn_PhongNhieuNhanVienNam() 
 BEGIN 
-    SELECT p.MAPHG, p.TENPHG, SUM(n.PHAI = 'Nam') AS SoNhanVienNam, ROUND(AVG(n.LUONG), 2) AS LuongTrungBinh 
-    FROM PHONGBAN p 
-    JOIN NHANVIEN n ON n.PHG = p.MAPHG 
-    GROUP BY p.MAPHG, p.TENPHG 
-    HAVING AVG(n.LUONG) > 30000; 
+    SELECT MAPHG AS MaPhong, TENPHG AS TenPhong, 
+           fn_SoNhanVienNam(MAPHG) AS SoNhanVienNam, 
+           fn_LuongTrungBinhPhong(MAPHG) AS LuongTrungBinh 
+    FROM PHONGBAN 
+    WHERE fn_LuongTrungBinhPhong(MAPHG) > 30000 
+    ORDER BY MAPHG; 
 END$$
 
--- 8.5. Mã số dự án, tên dự án và số lượng nhân viên phòng số 5 tham gia
+-- 8.5. Với mỗi dự án: mã DA, tên DA, số lượng NV phòng số 5 tham gia
 DROP PROCEDURE IF EXISTS sp_fn_DuAnNhanVienPhong5$$
 CREATE PROCEDURE sp_fn_DuAnNhanVienPhong5() 
 BEGIN 
-    SELECT d.MADA, d.TENDA, COUNT(n.MANV) AS SoNhanVienPhong5 
-    FROM DEAN d 
-    LEFT JOIN PHANCONG p ON p.SODA = d.MADA 
-    LEFT JOIN NHANVIEN n ON n.MANV = p.MA_NVIEN AND n.PHG = '5' 
-    GROUP BY d.MADA, d.TENDA; 
+    SELECT MADA AS MaDuAn, TENDA AS TenDuAn, fn_SoNhanVienPhongThamGiaDuAn(MADA, '5') AS SoNhanVienPhong5 
+    FROM DEAN 
+    ORDER BY MADA; 
 END$$
 
 DELIMITER ;

@@ -29,18 +29,21 @@
 | **Bài 6.1** | Trigger khi xóa mượn sách (`tg_delMuon`) | `tg_delMuon` | Cập nhật tình trạng cuốn sách thành `yes` |
 | **Bài 6.2** | Trigger khi thêm mượn sách (`tg_insMuon`) | `tg_insMuon` | Cập nhật tình trạng cuốn sách thành `no` |
 | **Bài 6.3** | Trigger cập nhật cuốn sách (`tg_updCuonSach`) | `tg_updCuonSach` | Cập nhật trạng thái đầu sách thành `yes`/`no` tương ứng |
-| **Bài 6.4** | Trigger thông báo thêm/sửa tựa sách (`tg_InfThongBao`) | `tg_InfThongBao` & `tg_updTuasachThongBao` | Ghi câu thông báo vào bảng `ThongBao` |
+| **Bài 6.4** | Trigger thông báo thêm/sửa tựa sách (`tg_InfThongBao`) | `tg_InfThongBao` & `tg_InfThongBao_Update` | Ghi câu `'Đã thêm mới tựa sách'` vào bảng `ThongBao` (MySQL không có `PRINT` và không cho 1 trigger bắt nhiều sự kiện) |
+| **Bài 6 (kiểm thử)** | Kiểm tra trigger bằng `BEGIN TRAN ... ROLLBACK` | `sp_KiemThuTrigger(p_bai)` | Chạy thao tác trong transaction, hiển thị trạng thái trước/sau rồi `ROLLBACK` nên dữ liệu không đổi |
 | **Bài 7.1** | Hàm tính lương trung bình phòng ban | `fn_LuongTrungBinhPhong(maPhong)` | Thủ tục bọc: `sp_fn_LuongTrungBinhPhong` |
 | **Bài 7.2** | Hàm tính tổng lương NV theo dự án | `fn_LuongNhanVienDuAn(maNv, maDa)` | Thủ tục bọc: `sp_fn_LuongNhanVienDuAn` |
-| **Bài 7.3** | Hàm tính lương trung bình của các phòng ban | `sp_fn_LuongTrungBinhCacPhong()` | Trả về bảng gồm mã phòng, tên phòng, lương TB |
+| **Bài 7.3** | Hàm tính lương trung bình của các phòng ban | `fn_LuongTrungBinhCacPhong()` | Thủ tục bọc `sp_fn_LuongTrungBinhCacPhong` hiển thị lương TB từng phòng + dòng tổng hợp |
 | **Bài 7.4** | Hàm tính tiền thưởng theo tổng số giờ tham gia | `fn_TienThuongNhanVien(maNv)` | Thủ tục bọc: `sp_fn_TienThuongNhanVien` |
-| **Bài 7.5** | Hàm trả ra tổng số dự án theo mỗi phòng | `sp_fn_SoDuAnTheoPhong()` | Trả về bảng mã phòng, tên phòng, số dự án |
-| **Bài 7.6** | Hàm trả về bảng thông tin nhân viên | `sp_fn_ThongTinNhanVien()` | MySQL mô phỏng Table-Valued Function của SQL Server |
-| **Bài 8.1** | Dự án có nhiều hơn 2 nhân viên tham gia | `sp_fn_DuAnNhieuNhanVien()` | Gom nhóm theo đề án, `HAVING COUNT(MA_NVIEN) > 2` |
-| **Bài 8.2** | Phòng có > 2 nhân viên và có lương > 25000 | `sp_fn_PhongNhieuNhanVienLuongCao()` | Gom nhóm theo phòng, điều kiện `COUNT > 2` và `SUM(LUONG > 25000) > 0` |
-| **Bài 8.3** | Phòng có mức lương trung bình > 30000 | `sp_fn_PhongLuongCao()` | Trả về mã phòng, tên phòng, số lượng nhân viên |
-| **Bài 8.4** | Phòng lương TB > 30000: số lượng nhân viên nam | `sp_fn_PhongNhieuNhanVienNam()` | Trả về mã phòng, tên phòng, số lượng NV nam |
-| **Bài 8.5** | Số lượng nhân viên phòng 5 tham gia từng dự án | `sp_fn_DuAnNhanVienPhong5()` | Trả về mã DA, tên DA, số NV phòng 5 |
+| **Bài 7.5** | Hàm trả ra tổng số dự án theo mỗi phòng | `fn_SoDuAnCuaPhong(maPhong)` | Thủ tục bọc `sp_fn_SoDuAnTheoPhong` trả về bảng mã phòng, tên phòng, số dự án |
+| **Bài 7.6** | Hàm trả về bảng thông tin nhân viên (2 cách) | `sp_fn_ThongTinNhanVien_Inline()` & `sp_fn_ThongTinNhanVien_Multi()` | Mô phỏng Inline TVF (1 câu SELECT) và Multi-statement TVF (bảng tạm + nhiều bước). Cột: `MaNV, HoTen, NgaySinh, NguoiThan, TongLuongTB` (lương TB của phòng) |
+| **Bài 8.1** | Dự án có nhiều hơn 2 nhân viên tham gia | `sp_fn_DuAnNhieuNhanVien()` | Dùng hàm `fn_SoNhanVienDuAn(maDa) > 2` |
+| **Bài 8.2** | Phòng có > 2 nhân viên: số NV có lương > 25000 | `sp_fn_PhongNhieuNhanVienLuongCao()` | Lọc `fn_SoNhanVienPhong(maPhong) > 2`, đếm bằng `fn_SoNhanVienLuongTren(maPhong, 25000)` |
+| **Bài 8.3** | Phòng có mức lương trung bình > 30000 | `sp_fn_PhongLuongCao()` | Lọc bằng `fn_LuongTrungBinhPhong > 30000`, trả về mã phòng, tên phòng, số NV |
+| **Bài 8.4** | Phòng lương TB > 30000: số lượng nhân viên nam | `sp_fn_PhongNhieuNhanVienNam()` | Dùng `fn_SoNhanVienNam(maPhong)` |
+| **Bài 8.5** | Số lượng nhân viên phòng 5 tham gia từng dự án | `sp_fn_DuAnNhanVienPhong5()` | Dùng `fn_SoNhanVienPhongThamGiaDuAn(maDa, '5')` |
+
+> **Lưu ý về MySQL:** MySQL chỉ hỗ trợ hàm trả về 1 giá trị (scalar), không có hàm trả về bảng như SQL Server. Vì vậy các yêu cầu trả về nhiều dòng (7.5, 7.6, 8.1 - 8.5) được viết thành hàm scalar + thủ tục `sp_fn_...` gọi hàm đó để trả về bảng.
 
 ---
 
@@ -59,5 +62,5 @@
 2. Trên thanh Header của ứng dụng, nhập thông tin kết nối MySQL (mặc định: `Server=localhost;Port=3306;User ID=root;Password=root;SslMode=None`).
 3. Bấm nút **`Kết nối CSDL`**. Khi đèn trạng thái chuyển sang xanh lá (`● Đã kết nối`), bạn có thể bấm vào từng tab để kiểm thử các bài:
    - **Tab 1: Toán học & Thuật toán**: Kiểm thử Bài 1, 2, 4 (có thể bật/tắt checkbox *"Thực thi qua Stored Procedure & Function MySQL"* để đối chiếu giữa SQL và C#).
-   - **Tab 2: Quản lý Thư viện**: Kiểm thử Bài 3, Bài 5a - 5e, Bài 6.1 - 6.4 (có các chip mẫu thử nhanh như `[ISBN001]`, `[DG01]`).
+   - **Tab 2: Quản lý Thư viện**: Kiểm thử Bài 3, Bài 5a - 5e, Bài 6.1 - 6.4 (có các chip mẫu thử nhanh như `[ISBN001]`, `[DG01]`). Các nút `6.1` - `6.4` chạy thử từng trigger trong transaction rồi `ROLLBACK`, nên có thể bấm nhiều lần mà dữ liệu không đổi.
    - **Tab 3: Quản lý Đề án**: Kiểm thử Bài 7.1 - 7.6, Bài 8.1 - 8.5 (có các chip mẫu thử nhanh như `[NV001]`, `[DA 1]`, `[Phòng 5]`).
