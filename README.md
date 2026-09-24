@@ -6,10 +6,29 @@
 
 ## 1. Cấu trúc dự án
 
-- **`Form1.cs`**: Giao diện chính phân chia 3 Tab điều hướng hiện đại, hỗ trợ kiểm tra kết nối, gọi Stored Procedure / Function và hiển thị kết quả trực quan (Result Card cho Toán học, DataGridView cho CSDL).
-- **`DatabaseService.cs`**: Quản lý kết nối và thực thi Stored Procedure / Function trên MySQL thông qua thư viện `MySqlConnector`.
-- **`Database/BTL_Install.sql`**: Kịch bản tạo 2 CSDL MySQL (`BTL_ThuVien`, `BTL_DeAn`), nhập dữ liệu mẫu đa dạng và tạo toàn bộ Function, Stored Procedure, Trigger cho Bài 1 đến Bài 8.
-- **`De_bai_BTL_cuoi_ky.md`**: File đề bài gốc đã được chuyển đổi chi tiết sang định dạng Markdown.
+| Đường dẫn | Nội dung |
+|---|---|
+| `Program.cs` | Điểm khởi động, bắt lỗi không mong muốn và mở màn hình chính |
+| `UI/MainForm.cs` | Giao diện chính: mỗi nút mở một bài tập (Bài 1 - 8) |
+| `UI/ExerciseForm.cs` | Giao diện con của một bài: nút **Kết nối CSDL**, danh sách câu nhỏ và kết quả |
+| `UI/ConnectionDialog.cs` | Cài đặt máy chủ, cổng, tài khoản, mật khẩu MySQL |
+| `UI/Controls.cs`, `UI/Theme.cs` | Các control và bảng màu, font dùng chung |
+| `Exercises/ExerciseCatalog.cs` | Nội dung đề, tham số, thủ tục và mã nguồn SQL tương ứng của từng câu |
+| `Data/DatabaseService.cs` | Kết nối MySQL (bất đồng bộ), gọi thủ tục, đọc mã nguồn hàm / thủ tục / trigger |
+| `Data/ConnectionSettings.cs` | Lưu cài đặt kết nối tại `%AppData%\BTLWinForms\settings.json` (mật khẩu mã hóa bằng Windows DPAPI) |
+| `Database/BTL_Install.sql` | Tạo 2 CSDL `BTL_ThuVien`, `BTL_DeAn`, dữ liệu mẫu và toàn bộ Function, Stored Procedure, Trigger |
+| `De_bai_BTL_cuoi_ky.md` | Đề bài gốc dạng Markdown |
+
+### Giao diện theo yêu cầu đề bài
+
+- **Giao diện chính** có 8 nút, mỗi nút thực hiện 1 bài tập.
+- Mỗi bài mở một **giao diện con**; bài có nhiều câu nhỏ (5, 6, 7, 8) có danh sách câu ở cột trái.
+- Mỗi giao diện con có nút **Kết nối CSDL** của bài; nút **Thực hiện** chỉ bật sau khi kết nối thành công.
+- Mỗi câu hiển thị đủ 5 nội dung đề yêu cầu:
+  1. **Câu hỏi** (phía trên)
+  2. **Code kết nối CSDL** và 4. **Code lời gọi hàm / thủ tục** (tab *Code kết nối & lời gọi*, cập nhật theo tham số đang nhập)
+  3. **Hàm / thủ tục / trigger** (tab *Hàm / Thủ tục / Trigger*, đọc trực tiếp từ CSDL bằng `SHOW CREATE ...`)
+  5. **Kết quả trả về** (tab *Kết quả*)
 
 ---
 
@@ -55,12 +74,11 @@
 3. Mở và chạy toàn bộ nội dung file **`Database/BTL_Install.sql`** để tự động tạo 2 cơ sở dữ liệu `BTL_ThuVien` và `BTL_DeAn` cùng đầy đủ dữ liệu mẫu và các routine.
 
 ### Bước 2: Chạy ứng dụng WinForms
-1. Mở file `BTLWinForms.csproj` hoặc chạy lệnh:
+1. Mở `BTLWinForms.csproj` bằng Visual Studio 2022 hoặc chạy lệnh:
    ```powershell
    dotnet run
    ```
-2. Trên thanh Header của ứng dụng, nhập thông tin kết nối MySQL (mặc định: `Server=localhost;Port=3306;User ID=root;Password=root;SslMode=None`).
-3. Bấm nút **`Kết nối CSDL`**. Khi đèn trạng thái chuyển sang xanh lá (`● Đã kết nối`), bạn có thể bấm vào từng tab để kiểm thử các bài:
-   - **Tab 1: Toán học & Thuật toán**: Kiểm thử Bài 1, 2, 4 (có thể bật/tắt checkbox *"Thực thi qua Stored Procedure & Function MySQL"* để đối chiếu giữa SQL và C#).
-   - **Tab 2: Quản lý Thư viện**: Kiểm thử Bài 3, Bài 5a - 5e, Bài 6.1 - 6.4 (có các chip mẫu thử nhanh như `[ISBN001]`, `[DG01]`). Các nút `6.1` - `6.4` chạy thử từng trigger trong transaction rồi `ROLLBACK`, nên có thể bấm nhiều lần mà dữ liệu không đổi.
-   - **Tab 3: Quản lý Đề án**: Kiểm thử Bài 7.1 - 7.6, Bài 8.1 - 8.5 (có các chip mẫu thử nhanh như `[NV001]`, `[DA 1]`, `[Phòng 5]`).
+2. Bấm **Cài đặt kết nối** ở góc phải màn hình chính, nhập máy chủ, cổng, tài khoản, mật khẩu MySQL, bấm **Kiểm tra kết nối** rồi **Lưu**.
+3. Bấm vào một bài tập. Trong giao diện con, bấm **Kết nối CSDL**, chọn câu (nếu có) rồi bấm **Thực hiện** (hoặc nhấn Enter). Nhấn Esc để đóng.
+
+> Các câu Bài 6 chạy thao tác kiểm thử trong transaction rồi `ROLLBACK`, nên có thể chạy nhiều lần mà dữ liệu không đổi.
